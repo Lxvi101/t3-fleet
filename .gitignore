@@ -1,0 +1,7 @@
+node_modules/
+data/
+shots/
+fleet.config.json
+fleet.log
+*.token
+.DS_Store

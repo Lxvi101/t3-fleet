@@ -1,0 +1,18 @@
+{
+  "host": "127.0.0.1",
+  "port": 4777,
+  "maxDetailStreams": 40,
+  "servers": [
+    {
+      "id": "local",
+      "runtimeFile": "~/.t3/userdata/server-runtime.json",
+      "tokenFile": "~/.config/t3-fleet/local.token"
+    },
+    {
+      "id": "build-box",
+      "label": "Build box (tailnet)",
+      "url": "http://100.64.0.12:3773",
+      "tokenFile": "~/.config/t3-fleet/build-box.token"
+    }
+  ]
+}

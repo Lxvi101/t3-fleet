@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T3 Fleet</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>T3 Fleet</h1>
+        <span id="conn" class="conn">connecting…</span>
+      </div>
+      <div class="views" role="tablist">
+        <button data-view="map" role="tab">Map</button>
+        <button data-view="list" role="tab">List</button>
+      </div>
+      <div id="stats" class="stats"></div>
+    </header>
+    <nav class="filters">
+      <input id="search" type="search" placeholder="Search title, project, branch, path, activity…  ( / )" autocomplete="off" />
+      <select id="window" title="Time window">
+        <option value="active">Active now</option>
+        <option value="1h">Last hour</option>
+        <option value="24h" selected>Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="all">All</option>
+      </select>
+      <select id="server" title="Server"><option value="">All servers</option></select>
+      <select id="provider" title="Provider"><option value="">All providers</option></select>
+      <select id="project" title="Project"><option value="">All projects</option></select>
+      <div id="states" class="chips"></div>
+    </nav>
+    <section id="usage" class="usage" aria-label="Usage left"></section>
+    <main class="layout">
+      <section id="map" class="map"></section>
+      <section id="fleet" class="fleet" hidden></section>
+      <aside class="history">
+        <h2>Activity</h2>
+        <ol id="history"></ol>
+      </aside>
+    </main>
+    <div id="drawer" class="drawer" hidden>
+      <div class="drawer-scrim" data-close></div>
+      <article class="drawer-panel">
+        <button class="drawer-close" data-close title="Close (Esc)">×</button>
+        <div id="drawer-body"></div>
+      </article>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

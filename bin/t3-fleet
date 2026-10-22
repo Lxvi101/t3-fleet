@@ -1,0 +1,76 @@
+#!/bin/sh
+# t3-fleet: a read-only, live map of every agent across your t3code servers.
+set -eu
+
+APP_DIR="${T3_FLEET_HOME:-$HOME/.t3-fleet}"
+CONFIG_DIR="${T3_FLEET_CONFIG_DIR:-$HOME/.config/t3-fleet}"
+PORT="${FLEET_PORT:-4777}"
+LABEL="dev.t3fleet"
+BUN="$(command -v bun || echo "$HOME/.bun/bin/bun")"
+
+usage() {
+  cat <<USAGE
+Usage: t3-fleet <command>
+
+  open                         Open the dashboard (http://127.0.0.1:$PORT)
+  setup                        Connect this machine's t3code server (read-only token)
+  add <name> <url> [--ssh <host>]
+                               Add a remote t3code server. With --ssh, the read-only
+                               token is minted on that host for you.
+  servers                      List configured servers
+  start | stop | restart       Control the background service
+  status                       Is the service running?
+  logs                         Follow the service log
+  run                          Run in the foreground (no service)
+  update                       Pull the latest version and restart
+  uninstall                    Remove the service and app (keeps $CONFIG_DIR)
+USAGE
+}
+
+service_file() {
+  case "$(uname -s)" in
+    Darwin) echo "$HOME/Library/LaunchAgents/$LABEL.plist" ;;
+    *) echo "$HOME/.config/systemd/user/t3-fleet.service" ;;
+  esac
+}
+
+svc() {
+  case "$(uname -s)" in
+    Darwin)
+      case "$1" in
+        start) launchctl bootstrap "gui/$(id -u)" "$(service_file)" 2>/dev/null || launchctl kickstart "gui/$(id -u)/$LABEL" ;;
+        stop) launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true ;;
+        restart) launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || svc start ;;
+        status) launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E "^\s+(state|pid) =" || echo "not running" ;;
+      esac ;;
+    *)
+      case "$1" in
+        status) systemctl --user status t3-fleet --no-pager | head -5 ;;
+        *) systemctl --user "$1" t3-fleet ;;
+      esac ;;
+  esac
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  open)
+    url="http://127.0.0.1:$PORT"
+    command -v open >/dev/null && open "$url" || { command -v xdg-open >/dev/null && xdg-open "$url"; } || echo "$url" ;;
+  setup) "$BUN" "$APP_DIR/scripts/setup-local.ts" "$@" && svc restart ;;
+  add) "$BUN" "$APP_DIR/scripts/add-server.ts" "$@" && svc restart && echo "Restarted; the new server appears in a few seconds." ;;
+  servers) cat "$CONFIG_DIR/config.json" 2>/dev/null || echo "No servers yet. Run: t3-fleet setup" ;;
+  start | stop | restart | status) svc "$cmd" ;;
+  logs) tail -n 50 -f "$CONFIG_DIR/data/fleet.log" ;;
+  run) cd "$APP_DIR" && exec "$BUN" src/server.ts ;;
+  update) git -C "$APP_DIR" pull --ff-only && svc restart && echo "Updated to $(git -C "$APP_DIR" rev-parse --short HEAD)." ;;
+  uninstall)
+    svc stop || true
+    case "$(uname -s)" in Linux) systemctl --user disable t3-fleet 2>/dev/null || true ;; esac
+    rm -f "$(service_file)" "$HOME/.local/bin/t3-fleet"
+    rm -rf "$APP_DIR"
+    echo "Removed t3-fleet. Your servers and tokens are still in $CONFIG_DIR."
+    echo "Revoke a token on its host with: t3 auth session list / t3 auth session revoke <id>" ;;
+  help | -h | --help) usage ;;
+  *) usage; exit 1 ;;
+esac
