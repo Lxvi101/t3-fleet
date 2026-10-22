@@ -14,5 +14,13 @@
       "url": "http://100.64.0.12:3773",
       "tokenFile": "~/.config/t3-fleet/build-box.token"
     }
-  ]
+  ],
+  "sentinel": {
+    "enabled": true,
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "briefEveryMinutes": 60,
+    "desktop": true,
+    "ntfy": null
+  }
 }

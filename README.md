@@ -2,7 +2,8 @@
 
 A live map of every agent across all your [T3 Code](https://github.com/pingdotgg/t3code) machines. It shows
 which agents are running, what each one is doing right now, the subagents it spawned, which ones need you,
-and how much usage you have left on each provider.
+and how much usage you have left on each provider. A small watcher agent alerts you only when a thread
+really needs you, and an MCP server lets any of your agents ask about the fleet.
 
 It is **read-only** and runs **beside** T3 Code. It never modifies T3 Code, needs no fork or plugin, and
 keeps working as T3 Code updates.
@@ -45,6 +46,67 @@ The remote server has to be reachable from this machine, for example over Tailsc
 
 Click any agent for its details: where it runs, its prompt, result and recent timeline.
 
+## Sentinel: alerts only when it matters
+
+The sentinel watches the fleet so you don't have to. Cheap rules pick out threads that *might* need you:
+
+- blocked on an approval or a question;
+- failed recently, unless the failed thread is a subagent whose parent is still working;
+- finished on a question to you;
+- running with no activity for 25 minutes;
+- a provider with 10% or less left;
+- a machine offline for more than 3 minutes.
+
+A [Codex CLI](https://github.com/openai/codex) agent (`gpt-6-luna` by default: fast and cheap) looks at each
+new candidate once, through the fleet MCP. It decides whether the thread *really* needs you, and you are
+notified only when it does. Optional follow-ups, routine completions, retried failures and subagent errors
+that the parent handles stay quiet.
+
+Alerts show in the dashboard and as desktop notifications (macOS Notification Center, or `notify-send` on
+Linux). For phone alerts, set an [ntfy](https://ntfy.sh) topic. The sentinel also keeps a short **briefing**
+of the whole fleet and answers questions:
+
+```sh
+t3-fleet brief
+t3-fleet ask "what failed on the mac mini today?"
+```
+
+The dashboard's sidebar has the same: an **Ask your fleet** box, the alert cards, and the briefing.
+
+Without the Codex CLI, the sentinel uses only the rules that are unambiguous: blocked threads, machines
+offline, and usage at 5% or less.
+
+```jsonc
+// ~/.config/t3-fleet/config.json
+"sentinel": {
+  "model": "gpt-6-luna",          // any Codex model
+  "effort": "low",
+  "briefEveryMinutes": 60,         // 0 to brief only on demand
+  "desktop": true,
+  "ntfy": "https://ntfy.sh/your-secret-topic"
+}
+```
+
+## MCP server
+
+t3-fleet serves a read-only MCP server at `http://127.0.0.1:4777/mcp` (streamable HTTP). It is also
+available over stdio with `t3-fleet mcp`. Register it with Claude Code and Codex in one step:
+
+```sh
+t3-fleet mcp-install
+```
+
+| Tool | What it returns |
+| --- | --- |
+| `fleet_overview` | machines, counts by state, everything working or blocked, open alerts, usage |
+| `list_agents` | agents filtered by state, machine, project, provider, text or time window |
+| `get_agent` | one agent: where it runs, its parent and children, prompt and result, timeline |
+| `get_usage` | usage left per provider account, with reset times |
+| `recent_activity` | the fleet-wide activity feed |
+| `get_alerts` | what the sentinel thinks needs you |
+
+Any agent can then answer "what's running on the mac mini?" or "did the migration thread finish?".
+
 Some states are deliberately cautious, so the dashboard never guesses:
 
 - **live**: the provider is reporting that activity right now.
@@ -59,6 +121,10 @@ t3-fleet open        open the dashboard
 t3-fleet add …       add a machine
 t3-fleet setup       (re)connect this machine's T3 Code server
 t3-fleet servers     list configured machines
+t3-fleet brief       print a fresh briefing
+t3-fleet ask "…"     ask the sentinel about your fleet
+t3-fleet mcp-install register the MCP with Claude Code and Codex
+t3-fleet mcp         run the MCP server over stdio
 t3-fleet logs        follow the log
 t3-fleet restart     restart the background service
 t3-fleet update      pull the latest version
@@ -75,6 +141,9 @@ streams the T3 Code app uses:
 - `orchestration.subscribeThread`: only for threads that are working, just finished, or open in the
   dashboard. This stream supplies live activity and subagents.
 - `subscribeServerConfig`: provider status and usage limits.
+
+The sentinel runs `codex exec --ignore-user-config --ephemeral --sandbox read-only` with only the fleet
+MCP attached. It never sees your other Codex configuration, and it cannot change anything.
 
 Tokens never reach the browser. They stay in `~/.config/t3-fleet/` with mode 600. To revoke one, run
 `t3 auth session list` and then `t3 auth session revoke <id>` on that machine.

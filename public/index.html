@@ -37,6 +37,15 @@
       <section id="map" class="map"></section>
       <section id="fleet" class="fleet" hidden></section>
       <aside class="history">
+        <section id="sentinel" class="sentinel" hidden>
+          <form id="ask" class="ask" autocomplete="off">
+            <input name="q" placeholder="Ask your fleet…" />
+            <button type="submit">Ask</button>
+          </form>
+          <div id="answer" class="answer" hidden></div>
+          <div id="alerts"></div>
+          <div id="briefing"></div>
+        </section>
         <h2>Activity</h2>
         <ol id="history"></ol>
       </aside>

@@ -5,6 +5,7 @@ set -eu
 APP_DIR="${T3_FLEET_HOME:-$HOME/.t3-fleet}"
 CONFIG_DIR="${T3_FLEET_CONFIG_DIR:-$HOME/.config/t3-fleet}"
 PORT="${FLEET_PORT:-4777}"
+export PORT
 LABEL="dev.t3fleet"
 BUN="$(command -v bun || echo "$HOME/.bun/bin/bun")"
 
@@ -18,6 +19,10 @@ Usage: t3-fleet <command>
                                Add a remote t3code server. With --ssh, the read-only
                                token is minted on that host for you.
   servers                      List configured servers
+  mcp                          Run the fleet MCP server over stdio (for MCP clients)
+  mcp-install                  Register the fleet MCP with Claude Code and Codex
+  brief                        Print a fresh briefing from the sentinel agent
+  ask "<question>"             Ask the sentinel agent about your fleet
   start | stop | restart       Control the background service
   status                       Is the service running?
   logs                         Follow the service log
@@ -60,6 +65,20 @@ case "$cmd" in
   setup) "$BUN" "$APP_DIR/scripts/setup-local.ts" "$@" && svc restart ;;
   add) "$BUN" "$APP_DIR/scripts/add-server.ts" "$@" && svc restart && echo "Restarted; the new server appears in a few seconds." ;;
   servers) cat "$CONFIG_DIR/config.json" 2>/dev/null || echo "No servers yet. Run: t3-fleet setup" ;;
+  mcp) exec "$BUN" "$APP_DIR/src/mcp-stdio.ts" ;;
+  mcp-install)
+    url="http://127.0.0.1:$PORT/mcp"
+    if command -v claude >/dev/null; then
+      claude mcp add --scope user --transport http t3-fleet "$url" >/dev/null 2>&1 && echo "Added t3-fleet to Claude Code (user scope)." || echo "Claude Code: t3-fleet is already registered."
+    fi
+    if command -v codex >/dev/null; then
+      codex mcp add t3-fleet --url "$url" >/dev/null 2>&1 && echo "Added t3-fleet to Codex." || echo "Codex: t3-fleet is already registered."
+    fi
+    echo "Any other MCP client: $url (streamable HTTP), or the command: t3-fleet mcp" ;;
+  brief) curl -fsS -X POST "http://127.0.0.1:$PORT/api/brief" | "$BUN" -e 'const b = JSON.parse(await Bun.stdin.text()); console.log(b.text ?? b.error)' ;;
+  ask)
+    [ $# -gt 0 ] || { echo "Usage: t3-fleet ask \"<question>\""; exit 1; }
+    "$BUN" -e 'const r = await fetch(`http://127.0.0.1:${process.env.PORT}/api/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: process.argv.slice(1).join(" ") }) }); const b = await r.json(); console.log(b.answer ?? b.error)' "$@" ;;
   start | stop | restart | status) svc "$cmd" ;;
   logs) tail -n 50 -f "$CONFIG_DIR/data/fleet.log" ;;
   run) cd "$APP_DIR" && exec "$BUN" src/server.ts ;;

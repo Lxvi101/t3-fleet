@@ -21,6 +21,15 @@ export interface FleetConfig {
   /** Upper bound on concurrent per-thread detail streams per server. */
   maxDetailStreams: number;
   servers: ServerConfig[];
+  sentinel: {
+    enabled: boolean;
+    codex: string | null;
+    model: string;
+    effort: string;
+    briefEveryMinutes: number;
+    desktop: boolean;
+    ntfy: string | null;
+  };
 }
 
 export function expandHome(path: string): string {
@@ -48,6 +57,15 @@ export function loadConfig(file = CONFIG_FILE): FleetConfig {
     dataDir: resolve(expandHome(raw.dataDir ?? `${FLEET_HOME}/data`)),
     maxDetailStreams: Number(raw.maxDetailStreams ?? 40),
     servers,
+    sentinel: {
+      enabled: raw.sentinel?.enabled ?? true,
+      codex: raw.sentinel?.codex ?? null,
+      model: raw.sentinel?.model ?? "gpt-6-luna",
+      effort: raw.sentinel?.effort ?? "low",
+      briefEveryMinutes: Number(raw.sentinel?.briefEveryMinutes ?? 60),
+      desktop: raw.sentinel?.desktop ?? true,
+      ntfy: raw.sentinel?.ntfy ?? null,
+    },
   };
 }
 

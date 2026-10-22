@@ -19,6 +19,7 @@ const servers = new Map();
 const agents = new Map();
 let history = [];
 let usage = [];
+let sentinel = null;
 let selectedKey = null;
 let drawerTimer = null;
 
@@ -48,6 +49,7 @@ function applyState(state) {
   for (const agent of state.agents) agents.set(agent.key, agent);
   history = state.history;
   usage = state.usage ?? [];
+  sentinel = state.sentinel ?? null;
   setConn(true);
   scheduleRender();
 }
@@ -73,6 +75,7 @@ function connect() {
     for (const agent of patch.upserts) agents.set(agent.key, agent);
     for (const key of patch.removals) agents.delete(key);
     if (patch.usage) usage = patch.usage;
+    if (patch.sentinel) sentinel = patch.sentinel;
     if (patch.history.length) history = history.concat(patch.history).slice(-500);
     scheduleRender();
   });
@@ -129,6 +132,7 @@ function render() {
   const now = Date.now();
   renderStats();
   renderUsage();
+  renderSentinel();
   renderFilterOptions();
 
   const matched = new Set();
@@ -247,6 +251,38 @@ function agentRow(agent, depth, isMatch, _prefix, _last, now) {
     <div class="act">${act}</div>
     <div class="when" title="${esc(agent.updatedAt)}">${esc(when)}</div>
   </div>`;
+}
+
+function renderSentinel() {
+  $("sentinel").hidden = !sentinel;
+  if (!sentinel) return;
+  $("ask").querySelector("input").placeholder = `Ask your fleet…${sentinel.agent ? `  (${sentinel.agent})` : ""}`;
+  $("alerts").innerHTML = sentinel.alerts
+    .map(
+      (alert) => `<article class="alert ${alert.severity}">
+        <div class="alert-top"><span class="alert-sev">${alert.severity === "urgent" ? "Needs you now" : "Needs attention"}</span><span>${rel(alert.createdAt)}</span></div>
+        <div class="alert-head">${esc(alert.headline)}</div>
+        ${alert.why ? `<div class="alert-why">${esc(alert.why)}</div>` : ""}
+        ${alert.action ? `<div class="alert-action">→ ${esc(alert.action)}</div>` : ""}
+        <div class="alert-foot"><span>${esc([alert.machine, alert.title].filter(Boolean).join(" · "))}</span>
+          <span>${alert.agentKey && agents.has(alert.agentKey) ? `<button data-open="${esc(alert.agentKey)}">Open</button>` : ""}<button data-dismiss="${esc(alert.id)}">Dismiss</button></span></div>
+      </article>`,
+    )
+    .join("");
+  const briefing = sentinel.briefing;
+  const busy = sentinel.busy ? `<span class="busy">${esc(sentinel.busy === "triage" ? "checking threads…" : sentinel.busy === "briefing" ? "writing briefing…" : "thinking…")}</span>` : "";
+  $("briefing").innerHTML = `<div class="brief-head"><b>Briefing</b>${briefing ? `<span>${rel(briefing.at)}</span>` : ""}${busy}<button id="brief-now" ${sentinel.busy ? "disabled" : ""}>${briefing ? "Refresh" : "Brief me"}</button></div>
+    ${briefing ? `<div class="brief-text">${formatText(briefing.text)}</div>` : `<div class="note">${sentinel.agent ? "No briefing yet." : "Install the Codex CLI to enable briefings and smart alerts."}</div>`}`;
+}
+
+function formatText(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .split("\n")
+    .map((line) => (line.startsWith("- ") ? `<li>${line.slice(2)}</li>` : line ? `<p>${line}</p>` : ""))
+    .join("")
+    .replace(/(<li>.*?<\/li>)+/gs, (list) => `<ul>${list}</ul>`);
 }
 
 function renderUsage() {
@@ -530,4 +566,40 @@ document.addEventListener("keydown", (event) => {
   }
 });
 setInterval(scheduleRender, 5000);
+$("sentinel").addEventListener("click", async (event) => {
+  const dismiss = event.target.closest("[data-dismiss]")?.dataset.dismiss;
+  if (dismiss) await fetch(`/api/alerts/dismiss?id=${encodeURIComponent(dismiss)}`, { method: "POST" });
+  const open = event.target.closest("[data-open]")?.dataset.open;
+  if (open) openDrawer(open);
+  if (event.target.id === "brief-now") {
+    event.target.disabled = true;
+    await fetch("/api/brief", { method: "POST" });
+  }
+});
+$("ask").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = event.target.querySelector("input");
+  const question = input.value.trim();
+  if (!question) return;
+  const answer = $("answer");
+  answer.hidden = false;
+  answer.innerHTML = `<div class="answer-q">${esc(question)}</div><div class="note">Looking across your fleet…</div>`;
+  const response = await fetch("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) }).catch(() => null);
+  const body = response ? await response.json().catch(() => ({})) : { error: "Dashboard unreachable" };
+  answer.innerHTML = `<div class="answer-q">${esc(question)}<button class="answer-close" title="Close">×</button></div>${body.answer ? `<div class="brief-text">${formatText(body.answer)}</div>` : `<div class="note" style="color:var(--failed)">${esc(body.error ?? "No answer")}</div>`}`;
+});
+$("answer").addEventListener("click", (event) => {
+  if (event.target.closest(".answer-close")) $("answer").hidden = true;
+});
+// Alert notifications link here with #agent=<key>.
+function openFromHash() {
+  const match = location.hash.match(/^#agent=(.+)$/);
+  if (!match) return;
+  const key = decodeURIComponent(match[1]);
+  history.replaceState(null, "", location.pathname + location.search);
+  const tryOpen = (attempts) => (agents.has(key) ? openDrawer(key) : attempts > 0 && setTimeout(() => tryOpen(attempts - 1), 500));
+  tryOpen(20);
+}
+window.addEventListener("hashchange", openFromHash);
+openFromHash();
 connect();

@@ -130,6 +130,12 @@ export class Fleet {
     return views;
   }
 
+  /** The thread's latest visible message, without attaching a detail stream. */
+  latestMessage(key: string): { role: string; text: string; at: string } | null {
+    const parsed = this.parseKey(key);
+    return parsed && !parsed.subagentId ? parsed.thread.latestMessage : null;
+  }
+
   agentDetail(key: string): AgentDetail | null {
     const parsed = this.parseKey(key);
     if (!parsed) return null;

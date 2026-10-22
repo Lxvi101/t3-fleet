@@ -91,6 +91,8 @@ ln -sf "$APP_DIR/bin/t3-fleet" "$BIN_DIR/t3-fleet"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) say "Add $BIN_DIR to your PATH to use the t3-fleet command." ;; esac
 
 say "t3-fleet is running at http://127.0.0.1:4777"
+if command -v codex >/dev/null || [ -x "$HOME/.local/bin/codex" ]; then say "Sentinel: smart alerts and briefings via Codex (gpt-6-luna)"; else say "Sentinel: rules only. Install the Codex CLI for smart alerts and briefings."; fi
 echo "  t3-fleet open                          open the dashboard"
 echo "  t3-fleet add <name> <url> --ssh <host> watch another machine"
+echo "  t3-fleet mcp-install                   give Claude Code and Codex the fleet MCP"
 echo "  t3-fleet help                          everything else"
