@@ -127,6 +127,8 @@ export class ServerConnection {
         if (socket !== this.socket || !stream.live) return;
         stream.live = false;
         stream.cancel = null;
+        // A dropped socket ends every stream; reconnecting resubscribes them without a penalty.
+        if (socket.isClosed) return;
         stream.retryAfter = Date.now() + DETAIL_RETRY_MS;
         console.warn(`[${this.id}] thread ${threadId} stream ended: ${describeExit(exit)}`);
         this.listener.detail(this, threadId, { type: "other" });

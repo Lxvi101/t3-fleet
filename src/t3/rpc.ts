@@ -60,6 +60,10 @@ export class RpcSocket {
     };
   }
 
+  get isClosed() {
+    return this.closed;
+  }
+
   close() {
     this.shutdown("closed by collector");
     try {
