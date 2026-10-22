@@ -33,16 +33,16 @@ The remote server has to be reachable from this machine, for example over Tailsc
 
 ## What you see
 
-- **Usage left**: for every provider account, the share of each limit window that remains (Claude's
-  session and weekly limits, Codex's weekly limit, …) and when it resets. Accounts shared by several
-  machines are shown once.
-- **Map**: each machine is a hub. Its agents branch off it as cards, and subagents branch off their
-  parent. Each card shows what the agent is doing right now (running a command, editing a file,
-  running tests, thinking), plus its project, branch and elapsed time. Agents that need your approval or
-  input turn pink. Finished agents fold their subagents into a badge; click it to expand them.
+- **Usage left**: one ring per provider account in the top bar, showing its tightest limit (Claude's
+  session or weekly, Codex's weekly, …). Hover a ring for every window and when it resets. Accounts
+  shared by several machines are shown once.
+- **Map**: one starburst per machine. Agents radiate out as dots, closer in the more recently they
+  worked, so live work sits near the centre. Subagents burst from their parent. Blue dots are
+  working, pink ones need you, red ones failed, dark ones are done. Only agents doing something get a
+  label; hover any dot for the rest. The map always fits the screen until you pan or zoom.
 - **List**: the same information as rows, grouped by machine and project.
-- **Activity**: a feed across all machines: agents starting and finishing, commands, edits, test results,
-  failures and spawned subagents.
+- **Activity**: only outcomes and problems: completions, failures, failed tests, things that need you,
+  and machines going offline. Every command and edit is still in each agent's timeline and in the MCP.
 
 Click any agent for its details: where it runs, its prompt, result and recent timeline.
 

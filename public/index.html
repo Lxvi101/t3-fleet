@@ -7,55 +7,32 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <h1>T3 Fleet</h1>
-        <span id="conn" class="conn">connecting…</span>
-      </div>
-      <div class="views" role="tablist">
-        <button data-view="map" role="tab">Map</button>
-        <button data-view="list" role="tab">List</button>
-      </div>
-      <div id="stats" class="stats"></div>
+    <header class="bar">
+      <span class="brand">T3 Fleet<i id="conn" title="connecting"></i></span>
+      <nav class="seg" id="views"><button data-view="map">Map</button><button data-view="list">List</button></nav>
+      <input id="search" type="search" placeholder="Search" autocomplete="off" />
+      <nav class="seg" id="windows"><button data-window="active">Now</button><button data-window="24h">24h</button><button data-window="7d">7d</button></nav>
+      <span class="grow"></span>
+      <span id="down" class="down"></span>
+      <button id="needs" class="needs" hidden></button>
+      <div id="usage" class="usage"></div>
     </header>
-    <nav class="filters">
-      <input id="search" type="search" placeholder="Search title, project, branch, path, activity…  ( / )" autocomplete="off" />
-      <select id="window" title="Time window">
-        <option value="active">Active now</option>
-        <option value="1h">Last hour</option>
-        <option value="24h" selected>Last 24 hours</option>
-        <option value="7d">Last 7 days</option>
-        <option value="all">All</option>
-      </select>
-      <select id="server" title="Server"><option value="">All servers</option></select>
-      <select id="provider" title="Provider"><option value="">All providers</option></select>
-      <select id="project" title="Project"><option value="">All projects</option></select>
-      <div id="states" class="chips"></div>
-    </nav>
-    <section id="usage" class="usage" aria-label="Usage left"></section>
     <main class="layout">
       <section id="map" class="map"></section>
-      <section id="fleet" class="fleet" hidden></section>
-      <aside class="history">
-        <section id="sentinel" class="sentinel" hidden>
-          <form id="ask" class="ask" autocomplete="off">
-            <input name="q" placeholder="Ask your fleet…" />
-            <button type="submit">Ask</button>
-          </form>
+      <section id="list" class="list" hidden></section>
+      <aside class="side">
+        <div id="sentinel" hidden>
+          <form id="ask" autocomplete="off"><input name="q" placeholder="Ask your fleet" /></form>
           <div id="answer" class="answer" hidden></div>
           <div id="alerts"></div>
-          <div id="briefing"></div>
-        </section>
-        <h2>Activity</h2>
+          <div id="briefing" class="briefing"></div>
+        </div>
         <ol id="history"></ol>
       </aside>
     </main>
     <div id="drawer" class="drawer" hidden>
-      <div class="drawer-scrim" data-close></div>
-      <article class="drawer-panel">
-        <button class="drawer-close" data-close title="Close (Esc)">×</button>
-        <div id="drawer-body"></div>
-      </article>
+      <div class="scrim" data-close></div>
+      <article class="panel"><div id="drawer-body"></div></article>
     </div>
     <script src="/app.js" type="module"></script>
   </body>

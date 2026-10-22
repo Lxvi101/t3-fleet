@@ -351,7 +351,7 @@ Return one decision per candidate id.`;
       const text = await this.runCodex(
         `Brief the user on their T3 Code agent fleet right now, using the t3-fleet MCP tools (start with fleet_overview; use recent_activity for the last hour).
 Cover: what is running and where (machine, project, what it is doing), what finished or failed recently, anything that needs them, and provider usage left.
-Plain text, at most 10 short "- " bullets, most important first, no preamble, no headings. Name agents by their title. Do not run shell commands.`,
+At most 5 "- " bullets of under 16 words each, most important first. No preamble, no headings, no bold. Name agents by title. Skip anything uneventful. Do not run shell commands.`,
       );
       this.briefing = { text: text.trim(), at: new Date().toISOString() };
       this.save();
