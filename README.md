@@ -76,8 +76,10 @@ t3-fleet ask "what failed on the mac mini today?"
 
 In the dashboard, alerts sit at the top of the sidebar and the chat is docked under the map.
 
-Without the Codex CLI, the sentinel uses only the rules that are unambiguous: blocked threads, machines
-offline, and usage at 5% or less.
+The ⚙ menu in the dashboard switches **Luna** (the AI) and **notifications** off and on; the choice is
+saved to `config.json`. With Luna off, or without the Codex CLI, nothing calls a model. Only
+unambiguous rules raise alerts: a thread blocked on you, a machine offline, or usage at 5% or less. The
+same menu hides the usage rings.
 
 ```jsonc
 // ~/.config/t3-fleet/config.json
@@ -85,6 +87,8 @@ offline, and usage at 5% or less.
   "model": "gpt-6-luna",          // any Codex model
   "effort": "low",
   "briefEveryMinutes": 60,         // 0 to brief only on demand
+  "enabled": true,                 // Luna on/off (also in the dashboard's ⚙ menu)
+  "notify": true,                  // desktop + ntfy notifications on/off (also in ⚙)
   "desktop": true,
   "ntfy": "https://ntfy.sh/your-secret-topic"
 }

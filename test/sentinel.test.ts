@@ -42,7 +42,7 @@ function sentinelFor(agents: AgentView[], messages: Record<string, string> = {},
     latestMessage: (key: string) => (messages[key] ? { role: "assistant", text: messages[key], at: now } : null),
   };
   const history = { recent: () => [], add() {} };
-  const config = { enabled: true, codex: null, model: "gpt-6-luna", effort: "low", briefEveryMinutes: 0, desktop: false, ntfy: null };
+  const config = { enabled: true, notify: false, codex: null, model: "gpt-6-luna", effort: "low", briefEveryMinutes: 0, desktop: false, ntfy: null };
   return new Sentinel(fleet as any, history as any, config, "", "", `/tmp/t3-fleet-test-${Math.random()}`);
 }
 

@@ -31,6 +31,21 @@ button { cursor: pointer; }
 #search { width: 180px; height: 26px; border: 0; border-radius: 7px; background: var(--soft); padding: 0 9px; }
 #search:focus { outline: none; box-shadow: 0 0 0 1.5px var(--blue); background: #fff; }
 .grow { flex: 1; }
+.settings { position: relative; z-index: 21; }
+.gear { border: 0; background: none; color: var(--faint); font-size: 15px; width: 26px; height: 26px; border-radius: 7px; }
+.gear:hover, .gear.on { color: var(--text); background: var(--soft); }
+.menu { position: absolute; top: 32px; right: 0; width: 250px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 40px rgba(18, 24, 38, 0.14); padding: 6px; }
+.switch { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.switch:hover { background: var(--soft); }
+.switch span { flex: 1; display: flex; flex-direction: column; }
+.switch b { font-weight: 600; }
+.switch small { color: var(--faint); font-size: 11px; }
+.switch input { display: none; }
+.switch i { width: 30px; height: 18px; border-radius: 999px; background: #d9dde4; position: relative; flex: none; transition: background 0.15s; }
+.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform 0.15s; }
+.switch input:checked + i { background: var(--blue); }
+.switch input:checked + i::after { transform: translateX(12px); }
+.switch input:disabled + i { opacity: 0.4; }
 .down { color: var(--bad); }
 .needs { border: 0; background: var(--needs); color: #fff; font-weight: 600; border-radius: 999px; padding: 3px 10px; }
 .needs.on { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--needs); }
@@ -57,10 +72,11 @@ button { cursor: pointer; }
 .acct-head span { color: rgba(255, 255, 255, 0.45); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .win { display: grid; grid-template-columns: 96px 1fr 38px; align-items: center; gap: 8px; margin-top: 7px; font-size: 11.5px; }
 .win .lbl { color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.win .bar { height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.win .bar { display: block; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .win .bar i { display: block; height: 100%; border-radius: 999px; }
 .win b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.win .reset { grid-column: 2 / 4; margin-top: -4px; color: rgba(255, 255, 255, 0.38); font-size: 10.5px; }
+.win .reset { grid-column: 2 / 4; margin-top: -5px; color: rgba(255, 255, 255, 0.38); font-size: 10.5px; }
+.win + .win { margin-top: 4px; }
 .acct-note { margin-top: 6px; color: rgba(255, 255, 255, 0.45); font-size: 11.5px; }
 .acct-note a { color: #8fb0ff; text-decoration: none; }
 

@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { loadConfig } from "./config.ts";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { CONFIG_FILE, loadConfig } from "./config.ts";
 import { Fleet } from "./fleet.ts";
 import { HistoryStore } from "./history.ts";
 import { createMcp } from "./mcp.ts";
@@ -13,9 +14,19 @@ const config = loadConfig();
 const history = new HistoryStore(join(config.dataDir, "history.jsonl"));
 const fleet = new Fleet(config, history);
 const dashboardUrl = `http://${config.host === "0.0.0.0" ? "127.0.0.1" : config.host}:${config.port}`;
-const sentinel = config.sentinel.enabled
-  ? new Sentinel(fleet, history, { ...config.sentinel, codex: resolveCodex(config.sentinel.codex) }, `${dashboardUrl}/mcp`, dashboardUrl, config.dataDir)
-  : null;
+// Always running so it can be switched on from the dashboard; "enabled" only gates Luna (the AI).
+const sentinel = new Sentinel(fleet, history, { ...config.sentinel, codex: resolveCodex(config.sentinel.codex) }, `${dashboardUrl}/mcp`, dashboardUrl, config.dataDir);
+
+/** Persists dashboard toggles into config.json so they survive restarts. */
+function saveSentinelSettings(settings: { luna: boolean; notify: boolean }) {
+  try {
+    const raw = existsSync(CONFIG_FILE) ? JSON.parse(readFileSync(CONFIG_FILE, "utf8")) : { servers: [] };
+    raw.sentinel = { ...raw.sentinel, enabled: settings.luna, notify: settings.notify };
+    writeFileSync(CONFIG_FILE, `${JSON.stringify(raw, null, 2)}\n`);
+  } catch (error) {
+    console.warn(`could not save settings: ${error}`);
+  }
+}
 const mcp = createMcp(fleet, history, sentinel);
 const publicDir = join(import.meta.dir, "..", "public");
 const accessToken = process.env.FLEET_ACCESS_TOKEN ?? null;
@@ -77,6 +88,15 @@ const server = Bun.serve({
         return new Response(Bun.file(join(publicDir, url.pathname.slice(1))));
       case "/mcp":
         return mcp.http(request);
+      case "/api/settings": {
+        if (request.method === "POST") {
+          const change = (await request.json().catch(() => ({}))) as { luna?: boolean; notify?: boolean };
+          const settings = sentinel.settings(change);
+          saveSentinelSettings(settings);
+          return Response.json(settings);
+        }
+        return Response.json({ luna: sentinel.config.enabled, notify: sentinel.config.notify });
+      }
       case "/api/alerts/dismiss": {
         if (request.method !== "POST" || !sentinel) return new Response("Not found", { status: 404 });
         return Response.json({ ok: sentinel.dismiss(url.searchParams.get("id") ?? "") });
@@ -151,7 +171,7 @@ const server = Bun.serve({
 fleet.start();
 sentinel?.start();
 console.log(`t3-fleet monitoring ${config.servers.length} server(s) at http://${server.hostname}:${server.port} (MCP: /mcp)`);
-console.log(sentinel ? `sentinel: ${sentinel.config.codex ? `codex ${sentinel.config.model}` : "rules only (codex CLI not found)"}` : "sentinel: off");
+console.log(`sentinel: ${!sentinel.config.codex ? "rules only (codex CLI not found)" : sentinel.config.enabled ? `Luna on (codex ${sentinel.config.model})` : "Luna off (rules only)"}`);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

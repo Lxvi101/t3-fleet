@@ -14,8 +14,8 @@ let selectedKey = null;
 let drawerTimer = null;
 
 const saved = JSON.parse(localStorage.getItem("t3fleet") ?? "{}");
-const prefs = { view: saved.view ?? "map", window: saved.window ?? "24h", q: "", needsOnly: false };
-const save = () => localStorage.setItem("t3fleet", JSON.stringify({ view: prefs.view, window: prefs.window }));
+const prefs = { view: saved.view ?? "map", window: saved.window ?? "24h", usage: saved.usage ?? true, q: "", needsOnly: false };
+const save = () => localStorage.setItem("t3fleet", JSON.stringify({ view: prefs.view, window: prefs.window, usage: prefs.usage }));
 
 const $ = (id) => document.getElementById(id);
 const esc = (value) =>
@@ -154,7 +154,7 @@ function renderBar() {
 /** Rings show each account's tightest limit; hovering expands them into every window. */
 function renderUsage() {
   const island = $("usage");
-  island.hidden = usage.length === 0;
+  island.hidden = usage.length === 0 || !prefs.usage;
   const measured = usage.filter((account) => account.windows.length);
   const leftOf = (w) => Math.round(100 - w.usedPercent);
   const color = (left) => (left <= 10 ? "#ff6b70" : left <= 30 ? "#f5b544" : null);
@@ -230,7 +230,12 @@ function byRank(a, b) {
 }
 
 function renderSentinel() {
-  $("chat").hidden = !sentinel?.agent;
+  $("chat").hidden = !sentinel?.agent || !sentinel.enabled;
+  for (const box of document.querySelectorAll("[data-setting]")) {
+    const key = box.dataset.setting;
+    box.checked = key === "luna" ? !!sentinel?.enabled : key === "notify" ? !!sentinel?.notify : prefs.usage;
+    if (key === "luna") box.disabled = !sentinel?.agent;
+  }
   $("chat-agent").textContent = sentinel?.agent ?? "";
   $("alerts").innerHTML = (sentinel?.alerts ?? [])
     .map(
@@ -251,6 +256,7 @@ function renderChat() {
   // An empty conversation opens with the latest briefing.
   if (!messages.length && sentinel?.briefing) messages.push({ role: "bot", text: sentinel.briefing.text, tag: `Briefing · ${rel(sentinel.briefing.at)}` });
   thread.hidden = threadHidden || (!messages.length && !chatBusy);
+  $("chat").querySelector('[data-chat="show"]').hidden = !(threadHidden && messages.length);
   const box = thread.querySelector(".messages");
   const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
   const html =
@@ -454,6 +460,37 @@ const grow = () => {
   input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
 };
 input.addEventListener("input", grow);
+// Coming back to the composer brings a minimised conversation back.
+input.addEventListener("focus", () => {
+  if (!threadHidden) return;
+  threadHidden = false;
+  renderChat();
+});
+$("gear").addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("menu").hidden = !$("menu").hidden;
+  $("gear").classList.toggle("on", !$("menu").hidden);
+});
+document.addEventListener("click", (e) => {
+  if (!$("menu").hidden && !e.target.closest(".settings")) {
+    $("menu").hidden = true;
+    $("gear").classList.remove("on");
+  }
+});
+$("menu").addEventListener("change", async (e) => {
+  const key = e.target.dataset.setting;
+  if (key === "usage") {
+    prefs.usage = e.target.checked;
+    save();
+    return schedule();
+  }
+  const response = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ [key]: e.target.checked }) }).catch(() => null);
+  if (response?.ok) {
+    const settings = await response.json();
+    sentinel = { ...sentinel, enabled: settings.luna, notify: settings.notify };
+  }
+  schedule();
+});
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -472,6 +509,7 @@ $("chat").addEventListener("click", (e) => {
   if (ask) send(ask);
   const action = e.target.closest("[data-chat]")?.dataset.chat;
   if (action === "hide") threadHidden = true;
+  if (action === "show") threadHidden = false;
   if (action === "clear") {
     chat.length = 0;
     localStorage.removeItem("t3fleet.chat");

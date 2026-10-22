@@ -11,7 +11,10 @@ import type { HistoryStore } from "./history.ts";
 import type { AgentView } from "./model.ts";
 
 export interface SentinelConfig {
+  /** Luna on: the Codex agent judges candidates, writes briefings and answers chat. Off: rules only. */
   enabled: boolean;
+  /** Desktop and ntfy notifications; alerts still show in the dashboard when off. */
+  notify: boolean;
   codex: string | null;
   model: string;
   effort: string;
@@ -124,6 +127,7 @@ export class Sentinel {
     setInterval(() => this.scan(), SCAN_MS);
     if (this.config.briefEveryMinutes > 0 && this.config.codex) {
       setInterval(() => {
+        if (!this.lunaOn) return;
         const due = Date.now() - this.lastBriefAt >= this.config.briefEveryMinutes * 60e3;
         const newest = this.history.recent(1)[0]?.id ?? 0;
         if (due && newest !== this.lastActivityId) void this.brief().catch(() => {});
@@ -135,9 +139,21 @@ export class Sentinel {
     this.listeners.add(listener);
   }
 
+  private get lunaOn() {
+    return this.config.enabled && this.config.codex !== null;
+  }
+
+  settings(change: { luna?: boolean; notify?: boolean }) {
+    if (typeof change.luna === "boolean") this.config.enabled = change.luna;
+    if (typeof change.notify === "boolean") this.config.notify = change.notify;
+    this.changed();
+    return { luna: this.config.enabled, notify: this.config.notify };
+  }
+
   state() {
     return {
       enabled: this.config.enabled,
+      notify: this.config.notify,
       agent: this.config.codex ? `Codex · ${this.config.model}` : null,
       busy: this.busy,
       alerts: this.openAlerts(),
@@ -256,7 +272,6 @@ export class Sentinel {
   // ---- triage -----------------------------------------------------------------------------------
 
   private scan() {
-    if (!this.config.enabled) return;
     const candidates = this.candidates();
     const live = new Set(candidates.map((c) => c.id));
     let changed = false;
@@ -278,10 +293,11 @@ export class Sentinel {
     let fromAgent = false;
     try {
       if (!this.config.codex) throw new Error("Codex CLI not found");
+      if (!this.config.enabled) throw new Error("Luna is off");
       decided = await this.judge(candidates);
       fromAgent = true;
     } catch (error) {
-      console.warn(`[sentinel] agent triage failed, using rules: ${error instanceof Error ? error.message : error}`);
+      if (this.lunaOn) console.warn(`[sentinel] agent triage failed, using rules: ${error instanceof Error ? error.message : error}`);
       decided = new Map(candidates.map((c) => [c.id, ruleDecision(c)]));
     }
     for (const candidate of candidates) {
@@ -345,6 +361,7 @@ Return one decision per candidate id.`;
   // ---- briefings and questions -----------------------------------------------------------------
 
   brief(): Promise<Briefing> {
+    if (!this.lunaOn) return Promise.reject(new Error("Luna is off. Turn it on in ⚙ to get briefings."));
     return this.enqueue("briefing", async () => {
       this.lastBriefAt = Date.now();
       this.lastActivityId = this.history.recent(1)[0]?.id ?? 0;
@@ -360,6 +377,7 @@ At most 5 "- " bullets of under 16 words each, most important first. No preamble
   }
 
   ask(question: string, conversation: { role: string; text: string }[] = []): Promise<string> {
+    if (!this.lunaOn) return Promise.reject(new Error("Luna is off. Turn it on in ⚙ to chat."));
     const earlier = conversation
       .slice(-8)
       .map((turn) => `${turn.role === "user" ? "User" : "You"}: ${turn.text.slice(0, 1500)}`)
@@ -430,6 +448,7 @@ Answer using the t3-fleet MCP tools (fleet_overview, list_agents, get_agent, rec
   }
 
   private async notify(alert: Alert) {
+    if (!this.config.notify) return;
     const title = alert.severity === "urgent" ? "Agent needs you" : "Agent needs attention";
     const subtitle = [alert.machine, alert.title].filter(Boolean).join(" · ").slice(0, 120);
     const message = `${alert.headline}. ${alert.action}`.slice(0, 240);

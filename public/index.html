@@ -19,6 +19,14 @@
         <div class="island-pill"></div>
         <div class="island-panel"></div>
       </div>
+      <div class="settings">
+        <button id="gear" class="gear" title="Settings">⚙</button>
+        <div id="menu" class="menu" hidden>
+          <label class="switch"><span><b>Luna</b><small>AI watcher, briefings and chat</small></span><input type="checkbox" data-setting="luna" /><i></i></label>
+          <label class="switch"><span><b>Notifications</b><small>Desktop and phone alerts</small></span><input type="checkbox" data-setting="notify" /><i></i></label>
+          <label class="switch"><span><b>Usage</b><small>Provider limit rings</small></span><input type="checkbox" data-setting="usage" /><i></i></label>
+        </div>
+      </div>
     </header>
     <main class="layout">
       <div class="stage">
@@ -32,6 +40,7 @@
           <form class="composer" autocomplete="off">
             <textarea rows="1" placeholder="Ask your fleet anything…"></textarea>
             <div class="tools">
+              <button type="button" class="chip" data-chat="show" hidden>Conversation</button>
               <button type="button" class="chip" data-ask="brief">Brief me</button>
               <button type="button" class="chip" data-ask="What needs me right now, and what exactly should I do?">What needs me?</button>
               <button type="button" class="chip" data-ask="What failed or got stuck in the last 24 hours, and why?">Failures</button>

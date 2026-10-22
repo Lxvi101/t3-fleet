@@ -23,6 +23,7 @@ export interface FleetConfig {
   servers: ServerConfig[];
   sentinel: {
     enabled: boolean;
+    notify: boolean;
     codex: string | null;
     model: string;
     effort: string;
@@ -59,6 +60,7 @@ export function loadConfig(file = CONFIG_FILE): FleetConfig {
     servers,
     sentinel: {
       enabled: raw.sentinel?.enabled ?? true,
+      notify: raw.sentinel?.notify ?? true,
       codex: raw.sentinel?.codex ?? null,
       model: raw.sentinel?.model ?? "gpt-6-luna",
       effort: raw.sentinel?.effort ?? "low",
