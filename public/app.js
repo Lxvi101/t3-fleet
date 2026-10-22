@@ -172,6 +172,8 @@ function renderUsage() {
       return ring(account, leftOf(tightest));
     })
     .join("") || `<span class="ring">usage</span>`;
+  // The panel grows out of the pill, so it needs the pill's width.
+  island.style.setProperty("--pill-w", `${island.querySelector(".island-pill").offsetWidth || 120}px`);
   island.querySelector(".island-panel").innerHTML = usage
     .map((account) => {
       const who = [account.plan, account.servers.length > 1 ? `${account.servers.length} machines` : account.servers[0]].filter(Boolean).join(" · ");
@@ -180,7 +182,7 @@ function renderUsage() {
         .map((w) => {
           const left = leftOf(w);
           const tint = color(left) ?? ACCENT[account.driver] ?? "#8fb0ff";
-          return `<div class="win"><span class="lbl">${esc(w.label)}</span><span class="bar"><i style="width:${left}%;background:${tint}"></i></span><b>${left}%</b>${w.resetsAt ? `<span class="reset">resets ${until(w.resetsAt)}</span>` : ""}</div>`;
+          return `<div class="win"><span class="lbl">${esc(w.label)}</span><span class="meter"><i style="width:${left}%;background:${tint}"></i></span><b>${left}%</b>${w.resetsAt ? `<span class="reset">resets ${until(w.resetsAt)}</span>` : ""}</div>`;
         })
         .join("");
       const note = account.windows.length
