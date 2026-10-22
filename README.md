@@ -36,11 +36,12 @@ The remote server has to be reachable from this machine, for example over Tailsc
 - **Usage left**: one ring per provider account in the top bar, showing its tightest limit. Hover the
   rings and they expand into every limit window, with bars, reset times, plan and machines. Accounts
   shared by several machines are shown once.
-- **Map**: a radar per machine. Distance from the centre is time since an agent last worked (rings
-  mark 1h and 6h), each sector is a project, and dot size is how much work the thread has done. Blue
-  agents are working and are joined to the centre; pink ones need you, red ones failed. Subagents
-  orbit their parent. Only live agents are labelled; hover any dot for the rest. The map always fits
-  the space above the chat until you pan or zoom.
+- **Map**: a tree of agent cards per machine. Each thread is a card showing its model, status and
+  what it is doing right now (or its error, or what it needs from you). Its subagents hang below it
+  in a row, and theirs stack beneath them. Trees with live work are expanded and sorted first; the
+  chevron on a card folds or unfolds its subagents. Cards slide into place as agents start and
+  finish. "N running" and "N failed" at the top filter the map. It fits the space above the chat
+  until you pan or zoom; zoomed far out, cards keep just their title and status.
 - **Chat**: a composer docked at the bottom talks to the sentinel agent across turns. It opens with the
   latest briefing, and has one-tap prompts for "Brief me", "What needs me?" and "Failures".
 - **List**: the same information as rows, grouped by machine and project.

@@ -14,7 +14,7 @@ let selectedKey = null;
 let drawerTimer = null;
 
 const saved = JSON.parse(localStorage.getItem("t3fleet") ?? "{}");
-const prefs = { view: saved.view ?? "map", window: saved.window ?? "24h", usage: saved.usage ?? true, q: "", needsOnly: false };
+const prefs = { view: saved.view ?? "map", window: saved.window ?? "24h", usage: saved.usage ?? true, q: "", needsOnly: false, stateFilter: null };
 const save = () => localStorage.setItem("t3fleet", JSON.stringify({ view: prefs.view, window: prefs.window, usage: prefs.usage }));
 
 const $ = (id) => document.getElementById(id);
@@ -22,7 +22,13 @@ const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 // The map fits into the space above the chat dock, whatever its current height.
-const map = createMap($("map"), { onOpen: (key) => openDrawer(key), bottomInset: () => ($("chat").hidden ? 0 : $("chat").offsetHeight + 20) });
+const map = createMap($("map"), {
+  onOpen: (key) => openDrawer(key),
+  onFilter: (state) => {
+    prefs.stateFilter = prefs.stateFilter === state ? null : state;
+    schedule();
+  },
+  bottomInset: () => ($("chat").hidden ? 0 : $("chat").offsetHeight + 20) });
 new ResizeObserver(() => map.refit()).observe($("chat"));
 const chat = JSON.parse(localStorage.getItem("t3fleet.chat") ?? "[]");
 let chatBusy = false;
@@ -86,6 +92,8 @@ function schedule() {
 
 function matches(agent, now) {
   if (prefs.needsOnly && agent.state !== "blocked") return false;
+  if (prefs.stateFilter === "failed" && agent.state !== "failed") return false;
+  if (prefs.stateFilter === "running" && !ACTIVE.has(agent.state)) return false;
   if (!ACTIVE.has(agent.state)) {
     if (prefs.window === "active") return false;
     if (now - Date.parse(agent.updatedAt) > WINDOW_MS[prefs.window]) return false;
@@ -134,7 +142,7 @@ function render() {
   $("map").hidden = prefs.view !== "map";
   $("list").hidden = prefs.view !== "list";
   const serverList = [...servers.values()];
-  if (prefs.view === "map") map.render({ agents, servers: serverList, shown, matched, children, selectedKey, now, window: prefs.window });
+  if (prefs.view === "map") map.render({ agents, servers: serverList, shown, matched, children, selectedKey, now, window: prefs.window, stateFilter: prefs.stateFilter });
   else renderList(serverList, shown, matched, children, now);
 }
 
