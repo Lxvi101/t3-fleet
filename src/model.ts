@@ -64,6 +64,8 @@ export interface AgentView {
   completedAt: string | null;
   /** Stable ordering key for layouts. */
   createdAt: string;
+  /** Rough amount of work: conversation items for threads, timeline items for subagents. */
+  work: number;
   updatedAt: string;
   /** Server is unreachable; everything above is the last value seen. */
   stale: boolean;

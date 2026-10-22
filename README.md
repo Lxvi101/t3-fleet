@@ -33,13 +33,16 @@ The remote server has to be reachable from this machine, for example over Tailsc
 
 ## What you see
 
-- **Usage left**: one ring per provider account in the top bar, showing its tightest limit (Claude's
-  session or weekly, Codex's weekly, …). Hover a ring for every window and when it resets. Accounts
+- **Usage left**: one ring per provider account in the top bar, showing its tightest limit. Hover the
+  rings and they expand into every limit window, with bars, reset times, plan and machines. Accounts
   shared by several machines are shown once.
-- **Map**: one starburst per machine. Agents radiate out as dots, closer in the more recently they
-  worked, so live work sits near the centre. Subagents burst from their parent. Blue dots are
-  working, pink ones need you, red ones failed, dark ones are done. Only agents doing something get a
-  label; hover any dot for the rest. The map always fits the screen until you pan or zoom.
+- **Map**: a radar per machine. Distance from the centre is time since an agent last worked (rings
+  mark 1h and 6h), each sector is a project, and dot size is how much work the thread has done. Blue
+  agents are working and are joined to the centre; pink ones need you, red ones failed. Subagents
+  orbit their parent. Only live agents are labelled; hover any dot for the rest. The map always fits
+  the space above the chat until you pan or zoom.
+- **Chat**: a composer docked at the bottom talks to the sentinel agent across turns. It opens with the
+  latest briefing, and has one-tap prompts for "Brief me", "What needs me?" and "Failures".
 - **List**: the same information as rows, grouped by machine and project.
 - **Activity**: only outcomes and problems: completions, failures, failed tests, things that need you,
   and machines going offline. Every command and edit is still in each agent's timeline and in the MCP.
@@ -71,7 +74,7 @@ t3-fleet brief
 t3-fleet ask "what failed on the mac mini today?"
 ```
 
-The dashboard's sidebar has the same: an **Ask your fleet** box, the alert cards, and the briefing.
+In the dashboard, alerts sit at the top of the sidebar and the chat is docked under the map.
 
 Without the Codex CLI, the sentinel uses only the rules that are unambiguous: blocked threads, machines
 offline, and usage at 5% or less.

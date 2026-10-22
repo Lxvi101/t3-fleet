@@ -359,10 +359,14 @@ At most 5 "- " bullets of under 16 words each, most important first. No preamble
     });
   }
 
-  ask(question: string): Promise<string> {
+  ask(question: string, conversation: { role: string; text: string }[] = []): Promise<string> {
+    const earlier = conversation
+      .slice(-8)
+      .map((turn) => `${turn.role === "user" ? "User" : "You"}: ${turn.text.slice(0, 1500)}`)
+      .join("\n\n");
     return this.enqueue("question", () =>
       this.runCodex(
-        `The user asks about their T3 Code agent fleet: "${question.replaceAll('"', "'").slice(0, 2000)}"
+        `${earlier ? `Conversation so far:\n${earlier}\n\n` : ""}The user asks about their T3 Code agent fleet: "${question.replaceAll('"', "'").slice(0, 2000)}"
 Answer using the t3-fleet MCP tools (fleet_overview, list_agents, get_agent, recent_activity, get_usage). Be concise and specific: name agents, machines and projects. Plain text, no preamble. Do not run shell commands.`,
       ).then((answer) => answer.trim()),
     );

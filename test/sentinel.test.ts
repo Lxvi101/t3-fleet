@@ -29,6 +29,7 @@ const agent = (overrides: Partial<AgentView>): AgentView => ({
   completedAt: null,
   createdAt: now,
   updatedAt: now,
+  work: 0,
   stale: false,
   ...overrides,
 });

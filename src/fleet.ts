@@ -227,6 +227,7 @@ export class Fleet {
         startedAt: backing?.startedAt ?? thread.startedAt,
         completedAt: backing?.completedAt ?? thread.completedAt,
         createdAt: thread.createdAt,
+        work: thread.items,
         updatedAt: backing && backing.updatedAt > thread.updatedAt ? backing.updatedAt : thread.updatedAt,
       },
     ];
@@ -256,6 +257,7 @@ export class Fleet {
         startedAt: subagent.startedAt,
         completedAt: subagent.completedAt,
         createdAt: subagent.startedAt ?? thread.createdAt,
+        work: [...stream.state.items.values()].filter((item) => owningSubagent(stream.state, item.nodeId) === subagent.id).length,
         updatedAt: subagent.updatedAt,
       });
     }

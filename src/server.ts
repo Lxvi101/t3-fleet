@@ -47,7 +47,7 @@ setInterval(() => {
 }, 250);
 
 function snapshot() {
-  return { servers: fleet.servers(), agents: fleet.agents(), usage: fleet.usage(), sentinel: sentinel?.state() ?? null, history: history.recent(300), now: new Date().toISOString() };
+  return { servers: fleet.servers(), agents: fleet.agents(), usage: fleet.usage(), sentinel: sentinel?.state() ?? null, history: history.recent(2000), now: new Date().toISOString() };
 }
 
 function authorized(request: Request, url: URL): boolean {
@@ -92,9 +92,9 @@ const server = Bun.serve({
       case "/api/ask": {
         if (request.method !== "POST" || !sentinel) return new Response("Not found", { status: 404 });
         server.timeout(request, 0);
-        const { question } = (await request.json().catch(() => ({}))) as { question?: string };
+        const { question, conversation } = (await request.json().catch(() => ({}))) as { question?: string; conversation?: { role: string; text: string }[] };
         if (!question?.trim()) return Response.json({ error: "Ask a question." }, { status: 400 });
-        return sentinel.ask(question).then(
+        return sentinel.ask(question, Array.isArray(conversation) ? conversation : []).then(
           (answer) => Response.json({ answer }),
           (error) => Response.json({ error: String(error?.message ?? error) }, { status: 500 }),
         );

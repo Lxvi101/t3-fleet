@@ -1,17 +1,21 @@
-// Agent map as a starburst network. Each machine is a centre; its agents radiate out as dots.
-// Distance from the centre is how long ago an agent last worked, so live work sits close in and
-// history drifts outward. Subagents burst from their parent. Only agents that are working,
-// blocked or failed get a label; everything else shows one on hover.
-// Positions are in world units; everything is drawn in screen space so dots and labels keep
-// their size while zooming. The view auto-fits until the user pans or zooms.
+// Agent map as a radar, one per machine.
+//   distance from the centre = time since the agent last worked (rings are labelled 1h, 6h, …)
+//   sector                   = project
+//   dot size                 = how much work the thread has done
+//   colour                   = state; only working or blocked agents get a line to the centre
+// Subagents orbit their parent. Positions are world units; everything is painted in screen
+// space so dots and text keep their size while zooming. The view auto-fits until the user
+// pans or zooms.
 
 const ACTIVE = new Set(["running", "waiting", "blocked"]);
-const INNER = 90;
-const SPREAD = 24;
-const CHILD_R = 30;
-const CHILD_CAP = 24;
-const BLOCK_GAP = 140;
-const PAD = 36;
+const R0 = 46;
+const R_NOW = 92;
+const R1 = 400;
+const CHILD_R = 22;
+const CHILD_CAP = 20;
+const LABEL_ROOM = 120;
+const BLOCK_GAP = 60;
+const PAD = 28;
 
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -20,7 +24,7 @@ const clip = (text, max) => {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 };
 
-export function createMap(root, { onOpen }) {
+export function createMap(root, { onOpen, bottomInset = () => 0 }) {
   root.innerHTML = `<svg class="sb" xmlns="http://www.w3.org/2000/svg"></svg><button class="sb-fit" hidden>Fit</button>`;
   const svg = root.querySelector("svg");
   const fitButton = root.querySelector(".sb-fit");
@@ -30,25 +34,25 @@ export function createMap(root, { onOpen }) {
   let autoFit = true;
   let hoverKey = null;
 
-  function size() {
+  const size = () => {
     const r = svg.getBoundingClientRect();
     return { w: r.width || 1200, h: r.height || 800 };
-  }
+  };
 
   function fit() {
     if (!scene) return;
     const { w, h } = size();
     const b = scene.bounds;
-    // Labels sit outside the dots; leave them room.
-    view.scale = Math.min((w - PAD * 2 - 180) / b.w, (h - PAD * 2 - 50) / b.h, 2);
+    // The chat composer floats over the bottom of the map.
+    const usableH = h - bottomInset();
+    view.scale = Math.min((w - PAD * 2) / b.w, (usableH - PAD * 2) / b.h, 1.8);
     view.x = w / 2 - (b.x + b.w / 2) * view.scale;
-    view.y = h / 2 - (b.y + b.h / 2) * view.scale;
+    view.y = usableH / 2 - (b.y + b.h / 2) * view.scale;
   }
 
-  function draw() {
-    if (!scene) return;
-    svg.innerHTML = paint(scene, view, data, hoverKey, size());
-  }
+  const draw = () => {
+    if (scene) svg.innerHTML = paint(scene, view, data, hoverKey, size());
+  };
 
   function manual() {
     if (!autoFit) return;
@@ -113,21 +117,31 @@ export function createMap(root, { onOpen }) {
   fitButton.addEventListener("click", () => {
     autoFit = true;
     fitButton.hidden = true;
+    scene = layout(data, { ...size(), h: size().h - bottomInset() });
     fit();
     draw();
   });
+
+  // Called when the space the map may use changes (e.g. the chat grows).
+  function refit() {
+    if (!autoFit || !data) return;
+    scene = layout(data, { ...size(), h: size().h - bottomInset() });
+    fit();
+    draw();
+  }
   new ResizeObserver(() => {
     if (autoFit && data) {
-      scene = layout(data, size());
+      scene = layout(data, { ...size(), h: size().h - bottomInset() });
       fit();
     }
     draw();
   }).observe(svg);
 
   return {
+    refit,
     render(next) {
       data = next;
-      scene = layout(next, size());
+      scene = layout(next, { ...size(), h: size().h - bottomInset() });
       if (autoFit) fit();
       draw();
     },
@@ -136,72 +150,95 @@ export function createMap(root, { onOpen }) {
 
 // ---- layout (world units) ------------------------------------------------------------------------
 
-function layout({ agents, servers, shown, children, now }, viewport) {
+const WINDOW_MIN = { active: 60, "24h": 1440, "7d": 10080 };
+const TICKS = { active: [], "24h": [60, 360, 1440], "7d": [60, 1440, 4320, 10080] };
+
+function layout({ agents, servers, shown, children, now, window }, viewport) {
+  const span = WINDOW_MIN[window] ?? 1440;
+  const radiusFor = (agent) => {
+    if (ACTIVE.has(agent.state)) return R_NOW - 22 + (hash(agent.key) % 26);
+    const minutes = Math.max(0, (now - Date.parse(agent.updatedAt)) / 60e3);
+    const t = Math.min(1, Math.log1p(minutes / 4) / Math.log1p(span / 4));
+    return R_NOW + 14 + t * (R1 - R_NOW - 14);
+  };
+  const ringRadius = (minutes) => R_NOW + 14 + (Math.log1p(minutes / 4) / Math.log1p(span / 4)) * (R1 - R_NOW - 14);
+
   const blocks = servers.map((server) => {
-    const roots = [...shown]
-      .map((key) => agents.get(key))
-      .filter((agent) => agent.serverId === server.id && !(agent.parentKey && shown.has(agent.parentKey)));
-    const nodes = [];
-    let reach = INNER + 40;
+    const roots = [...shown].map((key) => agents.get(key)).filter((a) => a.serverId === server.id && !(a.parentKey && shown.has(a.parentKey)));
+    const groups = new Map();
     for (const agent of roots) {
-      const angle = hashAngle(agent.key);
-      const r = radius(agent, now);
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
-      nodes.push({ agent, x, y, px: 0, py: 0, angle, depth: 0 });
-      reach = Math.max(reach, r);
-      burst(agent, x, y, angle, 1, nodes, shown, children);
+      const name = agent.projectTitle ?? "No project";
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(agent);
     }
-    for (const node of nodes) reach = Math.max(reach, Math.hypot(node.x, node.y));
-    return { server, nodes, reach };
+    // Sectors in a stable (alphabetical) order, sized by agent count with a floor.
+    const projects = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const weights = projects.map(([, list]) => Math.max(1.4, list.length ** 0.75));
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    const gap = projects.length > 1 ? 0.035 : 0;
+    const usable = Math.PI * 2 - gap * projects.length;
+    let angle = -Math.PI / 2;
+    const sectors = [];
+    const nodes = [];
+    projects.forEach(([name, list], i) => {
+      const a0 = angle + gap / 2;
+      const a1 = a0 + (usable * weights[i]) / total;
+      angle = a1 + gap / 2;
+      const ordered = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      ordered.forEach((agent, j) => {
+        const a = a0 + ((j + 0.5) / ordered.length) * (a1 - a0);
+        const r = radiusFor(agent);
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        nodes.push({ agent, x, y, px: 0, py: 0, angle: a, depth: 0 });
+        orbit(agent, x, y, a, 1, nodes, shown, children);
+      });
+      sectors.push({
+        name,
+        a0,
+        a1,
+        count: list.length,
+        active: list.filter((agent) => subtreeActive(agent, children)).length,
+        needs: list.filter((agent) => subtreeState(agent, children, "blocked")).length,
+      });
+    });
+    return { server, nodes, sectors };
   });
 
-  // Grid of machines that lets the map fit largest; each burst is stretched into an ellipse
-  // matching its cell so the whole screen is used.
-  const D = Math.max(...blocks.map((b) => b.reach * 2), 200) + BLOCK_GAP;
-  let best = { cols: 1, scale: 0 };
+  // The outer edge is the window itself, so only inner rings are labelled.
+  const ticks = (TICKS[window] ?? []).filter((m) => m < span).map((m) => ({ minutes: m, r: ringRadius(m) }));
+  const D = (R1 + LABEL_ROOM) * 2;
+  let best = { cols: 1, rows: 1, scale: 0 };
   for (let cols = 1; cols <= Math.max(1, blocks.length); cols++) {
     const rows = Math.ceil(blocks.length / cols);
-    const scale = Math.min(viewport.w / (cols * D), viewport.h / (rows * D));
+    const scale = Math.min(viewport.w / (cols * D + (cols - 1) * BLOCK_GAP), viewport.h / (rows * D + (rows - 1) * BLOCK_GAP));
     if (scale > best.scale) best = { cols, rows, scale };
   }
-  const cellAspect = viewport.w / best.cols / (viewport.h / best.rows);
-  const k = Math.min(1.45, Math.max(0.7, Math.sqrt(cellAspect)));
-  const cellW = D * k;
-  const cellH = D / k;
-  const placed = blocks.map((block, i) => {
-    for (const node of block.nodes) {
-      node.x *= k;
-      node.y /= k;
-      node.px *= k;
-      node.py /= k;
-    }
-    return { ...block, cx: (i % best.cols) * cellW + cellW / 2, cy: Math.floor(i / best.cols) * cellH + cellH / 2 };
-  });
-  const usedRows = Math.ceil(blocks.length / best.cols) || 1;
-  const usedCols = Math.min(best.cols, blocks.length) || 1;
-  return { blocks: placed, bounds: { x: BLOCK_GAP / 2, y: BLOCK_GAP / 2, w: usedCols * cellW - BLOCK_GAP, h: usedRows * cellH - BLOCK_GAP } };
+  const placed = blocks.map((block, i) => ({
+    ...block,
+    cx: (i % best.cols) * (D + BLOCK_GAP) + D / 2,
+    cy: Math.floor(i / best.cols) * (D + BLOCK_GAP) + D / 2,
+  }));
+  const cols = Math.min(best.cols, blocks.length) || 1;
+  const rows = Math.ceil(blocks.length / best.cols) || 1;
+  return { blocks: placed, ticks, bounds: { x: 0, y: 0, w: cols * D + (cols - 1) * BLOCK_GAP, h: rows * D + (rows - 1) * BLOCK_GAP } };
 }
 
-function burst(parent, px, py, angle, depth, nodes, shown, children) {
+function orbit(parent, px, py, angle, depth, nodes, shown, children) {
   const kids = (children.get(parent.key) ?? []).filter((kid) => shown.has(kid.key)).slice(0, CHILD_CAP);
-  const fan = Math.min(Math.PI * 1.2, 0.5 + kids.length * 0.18);
+  const fan = Math.min(Math.PI * 1.3, 0.6 + kids.length * 0.2);
   kids.forEach((kid, i) => {
     const a = angle + (kids.length === 1 ? 0 : -fan / 2 + (fan * i) / (kids.length - 1));
-    const r = CHILD_R * (ACTIVE.has(kid.state) ? 1.25 : 1) + (i % 3) * 7;
+    const r = CHILD_R + (ACTIVE.has(kid.state) ? 8 : 0) + (i % 2) * 6;
     const x = px + Math.cos(a) * r;
     const y = py + Math.sin(a) * r;
     nodes.push({ agent: kid, x, y, px, py, angle: a, depth });
-    if (depth < 3) burst(kid, x, y, a, depth + 1, nodes, shown, children);
+    if (depth < 3) orbit(kid, x, y, a, depth + 1, nodes, shown, children);
   });
 }
 
-/** Live work sits close in; finished agents drift out with time since they last worked. */
-function radius(agent, now) {
-  if (ACTIVE.has(agent.state)) return INNER + (hash(agent.key) % 30);
-  const minutes = Math.max(0, (now - Date.parse(agent.updatedAt)) / 60e3);
-  return INNER + 56 + SPREAD * Math.log2(1 + minutes / 10);
-}
+const subtreeActive = (agent, children) => ACTIVE.has(agent.state) || (children.get(agent.key) ?? []).some((kid) => subtreeActive(kid, children));
+const subtreeState = (agent, children, state) => agent.state === state || (children.get(agent.key) ?? []).some((kid) => subtreeState(kid, children, state));
 
 function hash(text) {
   let h = 2166136261;
@@ -209,111 +246,153 @@ function hash(text) {
   return h >>> 0;
 }
 
-function hashAngle(key) {
-  return ((hash(key) % 3600) / 3600) * Math.PI * 2;
-}
-
 // ---- painting (screen space) ---------------------------------------------------------------------
 
 function paint(scene, view, data, hoverKey, viewport) {
   const { matched, selectedKey, now } = data;
-  const S = (wx, wy) => [view.x + wx * view.scale, view.y + wy * view.scale];
+  const k = view.scale;
+  const back = [];
   const lines = [];
   const dots = [];
-  const hubs = [];
-  const labelCandidates = [];
+  const front = [];
+  const candidates = [];
+  const taken = [];
 
   for (const block of scene.blocks) {
-    const [hx, hy] = S(block.cx, block.cy);
+    const cx = view.x + block.cx * k;
+    const cy = view.y + block.cy * k;
+    const S = (x, y) => [cx + x * k, cy + y * k];
+    const titleY = cy - (R1 + 34) * k;
+    const discR = Math.max(R0 * k - 6, 16);
+    taken.push({ x: cx - discR, y: cy - discR, w: discR * 2, h: discR * 2 }, { x: cx - 120, y: titleY - 14, w: 240, h: 34 });
+
+    // Sectors and time rings.
+    block.sectors.forEach((sector, i) => {
+      back.push(`<path class="sb-sector ${i % 2 ? "alt" : ""} ${sector.active ? "hot" : ""}" d="${wedge(cx, cy, R0 * k, (R1 + 8) * k, sector.a0, sector.a1)}"/>`);
+      const mid = (sector.a0 + sector.a1) / 2;
+      const lx = cx + Math.cos(mid) * (R1 + 18) * k;
+      const ly = cy + Math.sin(mid) * (R1 + 18) * k;
+      const anchor = Math.abs(Math.cos(mid)) < 0.25 ? "middle" : Math.cos(mid) > 0 ? "start" : "end";
+      const text = `${clip(sector.name, 22)}`;
+      const width = text.length * 6.4 + 26;
+      const box = { x: anchor === "start" ? lx : anchor === "end" ? lx - width : lx - width / 2, y: ly - 9, w: width, h: 18 };
+      if (!collides(box, taken)) {
+        taken.push(box);
+        front.push(`<text class="sb-sector-label ${sector.needs ? "needs" : sector.active ? "hot" : ""}" x="${lx}" y="${ly + 4}" text-anchor="${anchor}">${esc(text)}<tspan class="n"> ${sector.count}</tspan></text>`);
+      }
+    });
+    for (const tick of scene.ticks) {
+      back.push(`<circle class="sb-ring" cx="${cx}" cy="${cy}" r="${tick.r * k}"/>`);
+      front.push(`<text class="sb-ring-label" x="${cx + 4}" y="${cy - tick.r * k - 3}">${tick.minutes >= 1440 ? `${tick.minutes / 1440}d` : `${tick.minutes / 60}h`}</text>`);
+    }
+    back.push(`<circle class="sb-now" cx="${cx}" cy="${cy}" r="${R_NOW * k}"/>`);
+
     for (const node of block.nodes) {
       const { agent } = node;
-      const [x, y] = S(block.cx + node.x, block.cy + node.y);
-      const [fx, fy] = S(block.cx + node.px, block.cy + node.py);
+      const [x, y] = S(node.x, node.y);
       const state = agent.state;
       const isMatch = matched.has(agent.key);
-      const tone = state === "blocked" ? "needs" : ACTIVE.has(state) ? "hot" : state === "failed" ? "bad" : "";
-      lines.push(`<line class="sb-line ${tone} ${isMatch ? "" : "dim"} ${node.depth ? "sub" : ""}" x1="${fx}" y1="${fy}" x2="${x}" y2="${y}"/>`);
-      dots.push({ depth: ACTIVE.has(state) ? 2 : state === "failed" ? 1 : 0, svg: dot(agent, x, y, node.depth, isMatch, agent.key === selectedKey || agent.key === hoverKey) });
+      const working = ACTIVE.has(state);
+      if (node.depth > 0) {
+        const [px, py] = S(node.px, node.py);
+        lines.push(`<line class="sb-tie ${working ? "hot" : ""} ${isMatch ? "" : "dim"}" x1="${px}" y1="${py}" x2="${x}" y2="${y}"/>`);
+      } else if (working) {
+        // A gently curved spoke from the machine to each agent that is working right now.
+        const bend = 0.35;
+        const qx = cx + (x - cx) / 2 - (y - cy) * bend * 0.3;
+        const qy = cy + (y - cy) / 2 + (x - cx) * bend * 0.3;
+        lines.push(`<path class="sb-spoke ${state === "blocked" ? "needs" : ""}" d="M ${cx} ${cy} Q ${qx} ${qy} ${x} ${y}"/>`);
+      }
+      dots.push({ order: working ? 2 : state === "failed" ? 1 : 0, svg: dot(agent, x, y, node.depth, isMatch, agent.key === selectedKey || agent.key === hoverKey) });
+      const focus = agent.key === hoverKey || agent.key === selectedKey;
       const recentFailure = state === "failed" && now - Date.parse(agent.updatedAt) < 6 * 3600e3;
-      const wants = agent.key === hoverKey || agent.key === selectedKey ? 0 : state === "blocked" ? 1 : ACTIVE.has(state) && node.depth === 0 ? 2 : recentFailure && node.depth === 0 ? 3 : ACTIVE.has(state) ? 4 : null;
-      if (wants !== null && (isMatch || wants === 0)) labelCandidates.push({ agent, x, y, angle: node.angle, priority: wants, depth: node.depth });
+      const priority = focus ? 0 : state === "blocked" ? 1 : working && node.depth === 0 ? 2 : recentFailure && node.depth === 0 ? 3 : working ? 4 : null;
+      if (priority !== null && (isMatch || focus)) candidates.push({ agent, x, y, angle: node.angle, priority, depth: node.depth });
     }
-    hubs.push(hub(block.server, hx, hy, block.nodes));
+
+    const active = block.nodes.filter((n) => ACTIVE.has(n.agent.state)).length;
+    const tone = block.server.status === "connected" ? "on" : block.server.status === "connecting" ? "pending" : "off";
+    front.push(`<g class="sb-hub ${tone}">
+      <circle cx="${cx}" cy="${cy}" r="${discR}" class="disc"/>
+      <text x="${cx}" y="${cy + 5}" class="count">${block.server.status !== "connected" ? "!" : active}</text>
+      <text x="${cx}" y="${titleY}" class="name">${esc(block.server.label)}</text>
+      <text x="${cx}" y="${titleY + 15}" class="sub">${esc(block.server.status !== "connected" ? `${block.server.status}${block.server.statusDetail ? ` · ${clip(block.server.statusDetail, 40)}` : ""}` : `${active} working · ${block.sectors.reduce((n, s) => n + s.count, 0)} agents`)}</text>
+    </g>`);
   }
 
-  // Labels: highest priority first, skipped when they would collide.
-  const taken = scene.blocks.map((block) => {
-    const [hx, hy] = S(block.cx, block.cy);
-    return { x: hx - 80, y: hy + 14, w: 160, h: 40 };
-  });
   const labels = [];
-  for (const c of labelCandidates.sort((a, b) => a.priority - b.priority)) {
+  for (const c of candidates.sort((a, b) => a.priority - b.priority)) {
     const label = placeLabel(c, taken, viewport);
     if (label) labels.push(label);
   }
+  return `<g>${back.join("")}</g><g>${lines.join("")}</g><g>${dots.sort((a, b) => a.order - b.order).map((d) => d.svg).join("")}</g><g>${front.join("")}</g><g>${labels.join("")}</g>`;
+}
 
-  return `<g>${lines.join("")}</g><g>${dots.sort((a, b) => a.depth - b.depth).map((d) => d.svg).join("")}</g><g>${hubs.join("")}</g><g>${labels.join("")}</g>`;
+function wedge(cx, cy, r0, r1, a0, a1) {
+  const p = (r, a) => `${cx + Math.cos(a) * r} ${cy + Math.sin(a) * r}`;
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  return `M ${p(r0, a0)} L ${p(r1, a0)} A ${r1} ${r1} 0 ${large} 1 ${p(r1, a1)} L ${p(r0, a1)} A ${r0} ${r0} 0 ${large} 0 ${p(r0, a0)} Z`;
 }
 
 function dot(agent, x, y, depth, isMatch, focused) {
   const state = agent.state;
   const cls = `sb-dot s-${state} ${isMatch ? "" : "dim"} ${focused ? "focus" : ""} ${agent.stale ? "stale" : ""}`;
-  if (state === "running" || state === "waiting" || state === "blocked") {
-    const r = depth ? 7 : 10;
+  if (ACTIVE.has(state)) {
+    const r = depth ? 6 : 10;
     return `<g class="${cls}" data-key="${esc(agent.key)}">
-      <circle cx="${x}" cy="${y}" r="${r + 7}" class="halo"/>
+      <circle cx="${x}" cy="${y}" r="${r + 8}" class="halo"/>
       <circle cx="${x}" cy="${y}" r="${r}" class="core"/>
       ${depth ? "" : `<g transform="translate(${x - 6.5} ${y - 6.5}) scale(${13 / 24})" class="sb-glyph">${glyphInner(agent.provider)}</g>`}
       <circle cx="${x}" cy="${y}" r="${r + 10}" class="hit"/>
     </g>`;
   }
-  const r = state === "failed" ? 4.5 : depth ? 2.2 : state === "completed" ? 3.6 : 3;
-  return `<g class="${cls}" data-key="${esc(agent.key)}"><circle cx="${x}" cy="${y}" r="${r}" class="core"/><circle cx="${x}" cy="${y}" r="${Math.max(r + 5, 8)}" class="hit"/></g>`;
+  const size = depth ? 1.6 + Math.min(2, Math.sqrt(agent.work || 0) / 5) : 2.2 + Math.min(3.8, Math.sqrt(agent.work || 0) / 3.2);
+  const r = state === "failed" ? Math.max(size, 4.2) : size;
+  return `<g class="${cls}" data-key="${esc(agent.key)}"><circle cx="${x}" cy="${y}" r="${r}" class="core"/><circle cx="${x}" cy="${y}" r="${Math.max(r + 4, 7)}" class="hit"/></g>`;
 }
 
-function hub(server, x, y, nodes) {
-  const active = nodes.filter((n) => ACTIVE.has(n.agent.state)).length;
-  const needs = nodes.filter((n) => n.agent.state === "blocked").length;
-  const tone = server.status === "connected" ? "on" : server.status === "connecting" ? "pending" : "off";
-  const sub = server.status !== "connected" ? server.status : needs ? `${needs} need${needs === 1 ? "s" : ""} you` : active ? `${active} working` : "";
-  return `<g class="sb-hub ${tone}">
-    <circle cx="${x}" cy="${y}" r="15" class="ring"/>
-    <circle cx="${x}" cy="${y}" r="8" class="core"/>
-    <text x="${x}" y="${y + 32}" class="name">${esc(server.label)}</text>
-    ${sub ? `<text x="${x}" y="${y + 46}" class="sub ${needs ? "needs" : ""}">${esc(sub)}</text>` : ""}
-  </g>`;
+function collides(r, taken) {
+  return taken.some((t) => r.x < t.x + t.w + 4 && r.x + r.w + 4 > t.x && r.y < t.y + t.h + 4 && r.y + r.h + 4 > t.y);
 }
 
 function placeLabel({ agent, x, y, angle, depth }, taken, viewport) {
-  const title = clip(agent.title, 34);
   const state = agent.state;
+  const title = clip(agent.title, 34);
   const line =
     state === "blocked"
       ? `needs you · ${(agent.pending?.kind ?? "input").replaceAll(/[_-]/g, " ")}`
       : state === "failed"
-        ? agent.lastError ?? "failed"
-        : agent.activity
+        ? (agent.lastError ?? "failed")
+        : agent.activity && ACTIVE.has(state)
           ? `${agent.activity.label}${agent.activity.detail ? ` · ${agent.activity.detail}` : ""}`
-          : (agent.projectTitle ?? "");
+          : [agent.projectTitle, ago(agent.updatedAt)].filter(Boolean).join(" · ");
   const second = clip(line, 40);
   const w = Math.max(title.length * 6.3, second.length * 5.7) + 18;
-  const h = second ? 34 : 20;
+  const h = 34;
   const right = Math.cos(angle) >= 0;
-  const gap = ACTIVE.has(state) ? (depth ? 14 : 18) : 9;
+  const gap = ACTIVE.has(state) ? (depth ? 12 : 16) : 9;
   const options = right ? [[gap, -h / 2], [gap, -h - 4], [gap, 4], [-gap - w, -h / 2]] : [[-gap - w, -h / 2], [-gap - w, -h - 4], [-gap - w, 4], [gap, -h / 2]];
   for (const [dx, dy] of options) {
     const r = { x: x + dx, y: y + dy, w, h };
     if (r.x < 4 || r.y < 4 || r.x + w > viewport.w - 4 || r.y + h > viewport.h - 4) continue;
-    if (taken.some((t) => r.x < t.x + t.w + 4 && r.x + r.w + 4 > t.x && r.y < t.y + t.h + 4 && r.y + r.h + 4 > t.y)) continue;
+    if (collides(r, taken)) continue;
     taken.push(r);
     const tone = state === "blocked" ? "needs" : state === "failed" ? "bad" : agent.activity?.live ? "live" : "";
     return `<g class="sb-label" data-key="${esc(agent.key)}">
-      <rect x="${r.x}" y="${r.y}" width="${w}" height="${h}" rx="6"/>
+      <rect x="${r.x}" y="${r.y}" width="${w}" height="${h}" rx="7"/>
       <text x="${r.x + 9}" y="${r.y + 14}" class="t">${esc(title)}</text>
-      ${second ? `<text x="${r.x + 9}" y="${r.y + 27}" class="d ${tone}">${esc(second)}</text>` : ""}
+      <text x="${r.x + 9}" y="${r.y + 27}" class="d ${tone}">${esc(second)}</text>
     </g>`;
   }
   return null;
+}
+
+function ago(iso) {
+  const m = Math.floor((Date.now() - Date.parse(iso)) / 60e3);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
 }
 
 // ---- provider glyphs -----------------------------------------------------------------------------

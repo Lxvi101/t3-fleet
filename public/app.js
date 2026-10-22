@@ -21,7 +21,12 @@ const $ = (id) => document.getElementById(id);
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const map = createMap($("map"), { onOpen: (key) => openDrawer(key) });
+// The map fits into the space above the chat dock, whatever its current height.
+const map = createMap($("map"), { onOpen: (key) => openDrawer(key), bottomInset: () => ($("chat").hidden ? 0 : $("chat").offsetHeight + 20) });
+new ResizeObserver(() => map.refit()).observe($("chat"));
+const chat = JSON.parse(localStorage.getItem("t3fleet.chat") ?? "[]");
+let chatBusy = false;
+let threadHidden = false;
 
 // ---- data ---------------------------------------------------------------------------------------
 
@@ -129,7 +134,7 @@ function render() {
   $("map").hidden = prefs.view !== "map";
   $("list").hidden = prefs.view !== "list";
   const serverList = [...servers.values()];
-  if (prefs.view === "map") map.render({ agents, servers: serverList, shown, matched, children, selectedKey, now });
+  if (prefs.view === "map") map.render({ agents, servers: serverList, shown, matched, children, selectedKey, now, window: prefs.window });
   else renderList(serverList, shown, matched, children, now);
 }
 
@@ -143,21 +148,50 @@ function renderBar() {
   $("down").textContent = down.map((s) => `${s.label} ${s.status}`).join(" · ");
   document.title = blocked ? `(${blocked}) T3 Fleet` : "T3 Fleet";
 
-  // One ring per account, showing its tightest window; all windows on hover.
-  $("usage").innerHTML = usage
-    .filter((account) => account.windows.length)
+  renderUsage();
+}
+
+/** Rings show each account's tightest limit; hovering expands them into every window. */
+function renderUsage() {
+  const island = $("usage");
+  island.hidden = usage.length === 0;
+  const measured = usage.filter((account) => account.windows.length);
+  const leftOf = (w) => Math.round(100 - w.usedPercent);
+  const color = (left) => (left <= 10 ? "#ff6b70" : left <= 30 ? "#f5b544" : null);
+  island.querySelector(".island-pill").innerHTML = measured
     .map((account) => {
       const tightest = account.windows.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a));
-      const left = Math.round(100 - tightest.usedPercent);
-      const circumference = 2 * Math.PI * 9;
-      const tip = [`${account.label}${account.plan ? ` · ${account.plan}` : ""}`, ...account.windows.map((w) => `${w.label}: ${Math.round(100 - w.usedPercent)}% left${w.resetsAt ? `, resets ${until(w.resetsAt)}` : ""}`)].join("\n");
-      return `<span class="ring ${left <= 10 ? "low" : ""}" title="${esc(tip)}">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" class="track"/>
-          <circle cx="12" cy="12" r="9" class="arc" stroke="${ACCENT[account.driver] ?? "#3d6ff5"}" stroke-dasharray="${(circumference * left) / 100} ${circumference}"/>
-          <g transform="translate(7 7) scale(${10 / 24})" class="ring-glyph">${glyph(account.driver).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</g></svg>
-        <span>${left}%</span></span>`;
+      return ring(account, leftOf(tightest));
+    })
+    .join("") || `<span class="ring">usage</span>`;
+  island.querySelector(".island-panel").innerHTML = usage
+    .map((account) => {
+      const who = [account.plan, account.servers.length > 1 ? `${account.servers.length} machines` : account.servers[0]].filter(Boolean).join(" · ");
+      const head = `<div class="acct-head">${account.windows.length ? ring(account, leftOf(account.windows.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a))), true) : `<span class="ring">${ringSvg(account, 0)}</span>`}<b>${esc(account.label)}</b><span>${esc(who)}</span></div>`;
+      const rows = account.windows
+        .map((w) => {
+          const left = leftOf(w);
+          const tint = color(left) ?? ACCENT[account.driver] ?? "#8fb0ff";
+          return `<div class="win"><span class="lbl">${esc(w.label)}</span><span class="bar"><i style="width:${left}%;background:${tint}"></i></span><b>${left}%</b>${w.resetsAt ? `<span class="reset">resets ${until(w.resetsAt)}</span>` : ""}</div>`;
+        })
+        .join("");
+      const note = account.windows.length
+        ? ""
+        : `<div class="acct-note">${account.unsupported?.link ? `Not reported to T3 Code · <a href="${esc(account.unsupported.link.url)}" target="_blank" rel="noreferrer">${esc(account.unsupported.link.label)} ↗</a>` : "Not reported to T3 Code"}</div>`;
+      return `<div class="acct">${head}${rows}${note}</div>`;
     })
     .join("");
+}
+
+function ringSvg(account, left) {
+  const circumference = 2 * Math.PI * 9;
+  const stroke = left <= 10 ? "#ff6b70" : left <= 30 ? "#f5b544" : (ACCENT[account.driver] === "#121826" ? "#ffffff" : (ACCENT[account.driver] ?? "#8fb0ff"));
+  return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" class="track"/>${left ? `<circle cx="12" cy="12" r="9" class="arc" stroke="${stroke}" stroke-dasharray="${(circumference * left) / 100} ${circumference}"/>` : ""}
+    <g transform="translate(7 7) scale(${10 / 24})" class="ring-glyph">${glyph(account.driver).replace(/^<svg[^>]*>|<\/svg>$/g, "")}</g></svg>`;
+}
+
+function ring(account, left, bare = false) {
+  return `<span class="ring ${left <= 10 ? "low" : ""}">${ringSvg(account, left)}${bare ? "" : `<span>${left}%</span>`}</span>`;
 }
 
 function renderList(serverList, shown, matched, children, now) {
@@ -196,9 +230,9 @@ function byRank(a, b) {
 }
 
 function renderSentinel() {
-  $("sentinel").hidden = !sentinel;
-  if (!sentinel) return;
-  $("alerts").innerHTML = sentinel.alerts
+  $("chat").hidden = !sentinel?.agent;
+  $("chat-agent").textContent = sentinel?.agent ?? "";
+  $("alerts").innerHTML = (sentinel?.alerts ?? [])
     .map(
       (alert) => `<div class="alert">
         <b ${alert.agentKey ? `data-open="${esc(alert.agentKey)}"` : ""}>${esc(alert.headline)}</b><button class="x" data-dismiss="${esc(alert.id)}" title="Dismiss">✕</button>
@@ -206,11 +240,55 @@ function renderSentinel() {
       </div>`,
     )
     .join("");
-  const b = sentinel.briefing;
-  const busy = sentinel.busy ? `<span class="spin">${sentinel.busy === "triage" ? "checking…" : "thinking…"}</span>` : "";
-  $("briefing").innerHTML = sentinel.agent
-    ? `<div class="head">${b ? `Briefing · ${rel(b.at)}` : ""}${busy}<button class="x" id="brief-now" title="${b ? "Refresh briefing" : "Brief me"}" ${sentinel.busy ? "disabled" : ""}>↻</button></div>${b ? formatText(b.text) : ""}`
-    : "";
+  renderChat();
+}
+
+// ---- chat ---------------------------------------------------------------------------------------
+
+function renderChat() {
+  const thread = $("chat").querySelector(".thread");
+  const messages = [...chat];
+  // An empty conversation opens with the latest briefing.
+  if (!messages.length && sentinel?.briefing) messages.push({ role: "bot", text: sentinel.briefing.text, tag: `Briefing · ${rel(sentinel.briefing.at)}` });
+  thread.hidden = threadHidden || (!messages.length && !chatBusy);
+  const box = thread.querySelector(".messages");
+  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  const html =
+    messages
+      .map((m) =>
+        m.role === "user"
+          ? `<div class="msg user">${esc(m.text)}</div>`
+          : `<div class="msg bot ${m.error ? "err" : ""}">${m.tag ? `<div class="tag">${esc(m.tag)}</div>` : ""}${formatText(m.text)}</div>`,
+      )
+      .join("") + (chatBusy ? `<div class="msg bot"><span class="typing"><i></i><i></i><i></i></span></div>` : "");
+  if (box.dataset.html !== html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+    if (stick) box.scrollTop = box.scrollHeight;
+  }
+  $("chat").querySelector(".send").disabled = chatBusy;
+}
+
+async function send(text) {
+  const question = text.trim();
+  if (!question || chatBusy) return;
+  threadHidden = false;
+  const brief = question === "brief";
+  chat.push({ role: "user", text: brief ? "Brief me" : question });
+  chatBusy = true;
+  renderChat();
+  const conversation = chat.slice(0, -1).map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.text }));
+  const response = await fetch(brief ? "/api/brief" : "/api/ask", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: brief ? undefined : JSON.stringify({ question, conversation }),
+  }).catch(() => null);
+  const body = response ? await response.json().catch(() => ({})) : { error: "The dashboard is unreachable." };
+  chatBusy = false;
+  const answer = brief ? body.text : body.answer;
+  chat.push(answer ? { role: "bot", text: answer } : { role: "bot", text: body.error ?? "No answer.", error: true });
+  localStorage.setItem("t3fleet.chat", JSON.stringify(chat.slice(-40)));
+  renderChat();
 }
 
 function renderHistory() {
@@ -363,29 +441,42 @@ $("drawer").addEventListener("click", (e) => {
     openDrawer(open.dataset.open);
   }
 });
-$("sentinel").addEventListener("click", async (e) => {
+$("alerts").addEventListener("click", async (e) => {
   const dismiss = e.target.closest("[data-dismiss]")?.dataset.dismiss;
   if (dismiss) await fetch(`/api/alerts/dismiss?id=${encodeURIComponent(dismiss)}`, { method: "POST" });
   const open = e.target.closest("[data-open]")?.dataset.open;
   if (open) openDrawer(open);
-  if (e.target.closest("#brief-now")) {
-    e.target.disabled = true;
-    await fetch("/api/brief", { method: "POST" });
-  }
-  if (e.target.closest(".answer .x")) $("answer").hidden = true;
 });
-$("ask").addEventListener("submit", async (e) => {
+const composer = $("chat").querySelector(".composer");
+const input = composer.querySelector("textarea");
+const grow = () => {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+};
+input.addEventListener("input", grow);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    composer.requestSubmit();
+  }
+});
+composer.addEventListener("submit", (e) => {
   e.preventDefault();
-  const input = e.target.querySelector("input");
-  const question = input.value.trim();
-  if (!question) return;
-  const answer = $("answer");
-  answer.hidden = false;
-  answer.innerHTML = `<div class="q">${esc(question)}</div><span class="spin">thinking…</span>`;
-  const response = await fetch("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) }).catch(() => null);
-  const body = response ? await response.json().catch(() => ({})) : { error: "unreachable" };
-  answer.innerHTML = `<button class="x" title="Close">✕</button><div class="q">${esc(question)}</div>${body.answer ? formatText(body.answer) : `<p style="color:var(--bad)">${esc(body.error ?? "no answer")}</p>`}`;
+  const text = input.value;
   input.value = "";
+  grow();
+  send(text);
+});
+$("chat").addEventListener("click", (e) => {
+  const ask = e.target.closest("[data-ask]")?.dataset.ask;
+  if (ask) send(ask);
+  const action = e.target.closest("[data-chat]")?.dataset.chat;
+  if (action === "hide") threadHidden = true;
+  if (action === "clear") {
+    chat.length = 0;
+    localStorage.removeItem("t3fleet.chat");
+  }
+  if (action) renderChat();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && selectedKey) closeDrawer();

@@ -83,6 +83,8 @@ export interface ThreadInfo {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Visible conversation items: a rough measure of how much work the thread has done. */
+  items: number;
 }
 
 export interface ShellState {
@@ -192,6 +194,7 @@ function parseThread(raw: any): ThreadInfo | null {
       : null,
     startedAt: str(raw.activityRunStartedAt) ?? str(raw.latestRunStartedAt),
     completedAt: str(raw.latestRunCompletedAt),
+    items: num(raw.visibleItemCount) ?? num(raw.itemCount) ?? 0,
     createdAt: str(raw.createdAt) ?? new Date(0).toISOString(),
     updatedAt: str(raw.updatedAt) ?? str(raw.createdAt) ?? new Date(0).toISOString(),
   };

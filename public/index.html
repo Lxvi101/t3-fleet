@@ -15,18 +15,34 @@
       <span class="grow"></span>
       <span id="down" class="down"></span>
       <button id="needs" class="needs" hidden></button>
-      <div id="usage" class="usage"></div>
+      <div id="usage" class="island" hidden>
+        <div class="island-pill"></div>
+        <div class="island-panel"></div>
+      </div>
     </header>
     <main class="layout">
-      <section id="map" class="map"></section>
-      <section id="list" class="list" hidden></section>
-      <aside class="side">
-        <div id="sentinel" hidden>
-          <form id="ask" autocomplete="off"><input name="q" placeholder="Ask your fleet" /></form>
-          <div id="answer" class="answer" hidden></div>
-          <div id="alerts"></div>
-          <div id="briefing" class="briefing"></div>
+      <div class="stage">
+        <section id="map" class="map"></section>
+        <section id="list" class="list" hidden></section>
+        <div id="chat" class="chat" hidden>
+          <div class="thread" hidden>
+            <div class="thread-head"><span id="chat-agent"></span><button class="x" data-chat="clear" title="Clear conversation">Clear</button><button class="x" data-chat="hide" title="Minimise">–</button></div>
+            <div class="messages"></div>
+          </div>
+          <form class="composer" autocomplete="off">
+            <textarea rows="1" placeholder="Ask your fleet anything…"></textarea>
+            <div class="tools">
+              <button type="button" class="chip" data-ask="brief">Brief me</button>
+              <button type="button" class="chip" data-ask="What needs me right now, and what exactly should I do?">What needs me?</button>
+              <button type="button" class="chip" data-ask="What failed or got stuck in the last 24 hours, and why?">Failures</button>
+              <span class="grow"></span>
+              <button type="submit" class="send" title="Send (Enter)">↑</button>
+            </div>
+          </form>
         </div>
+      </div>
+      <aside class="side">
+        <div id="alerts"></div>
         <ol id="history"></ol>
       </aside>
     </main>
